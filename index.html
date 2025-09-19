@@ -1,0 +1,638 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lecteur de Carte d'Identité Marocaine</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tesseract.js/5.0.4/tesseract.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Arial', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #c31432 0%, #240b36 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            font-size: 1.1em;
+            opacity: 0.9;
+        }
+
+        .main-content {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 30px;
+            padding: 30px;
+        }
+
+        .camera-section {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .camera-container {
+            position: relative;
+            width: 100%;
+            max-width: 400px;
+            background: #f8f9fa;
+            border-radius: 15px;
+            overflow: hidden;
+            box-shadow: 0 10px 20px rgba(0,0,0,0.1);
+        }
+
+        #video {
+            width: 100%;
+            height: auto;
+            display: block;
+        }
+
+        #canvas {
+            display: none;
+        }
+
+        .camera-overlay {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 85%;
+            height: 60%;
+            border: 3px dashed #fff;
+            border-radius: 10px;
+            pointer-events: none;
+        }
+
+        .camera-overlay::before {
+            content: "Détection automatique active";
+            position: absolute;
+            top: -30px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0,0,0,0.7);
+            color: white;
+            padding: 5px 15px;
+            border-radius: 20px;
+            font-size: 0.9em;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0% { opacity: 0.7; }
+            50% { opacity: 1; }
+            100% { opacity: 0.7; }
+        }
+
+        .controls {
+            margin-top: 20px;
+            display: flex;
+            gap: 15px;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+
+        .btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 25px;
+            font-size: 1em;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-weight: 600;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-secondary {
+            background: #6c757d;
+            color: white;
+        }
+
+        .btn-secondary:hover {
+            background: #5a6268;
+            transform: translateY(-2px);
+        }
+
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .info-section {
+            background: #f8f9fa;
+            border-radius: 15px;
+            padding: 25px;
+        }
+
+        .info-section h2 {
+            color: #2c3e50;
+            margin-bottom: 20px;
+            font-size: 1.8em;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            color: #495057;
+            font-weight: 600;
+        }
+
+        .form-group input {
+            width: 100%;
+            padding: 12px 15px;
+            border: 2px solid #e9ecef;
+            border-radius: 10px;
+            font-size: 1em;
+            transition: border-color 0.3s ease;
+        }
+
+        .form-group input:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+
+        .status {
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            text-align: center;
+            font-weight: 600;
+        }
+
+        .status.info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+
+        .status.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .status.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-right: 10px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        @media (max-width: 768px) {
+            .main-content {
+                grid-template-columns: 1fr;
+                gap: 20px;
+                padding: 20px;
+            }
+            
+            .header h1 {
+                font-size: 2em;
+            }
+            
+            .controls {
+                flex-direction: column;
+                align-items: center;
+            }
+            
+            .btn {
+                width: 100%;
+                max-width: 200px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🆔 Lecteur de CIN Marocaine</h1>
+            <p>Scannez votre carte d'identité nationale pour extraire automatiquement les informations</p>
+        </div>
+
+        <div class="main-content">
+            <div class="camera-section">
+                <div class="camera-container">
+                    <video id="video" autoplay></video>
+                    <div class="camera-overlay"></div>
+                    <canvas id="canvas"></canvas>
+                </div>
+
+                <div class="controls">
+                    <button id="startCamera" class="btn btn-primary">📹 Démarrer Détection Auto</button>
+                    <button id="captureBtn" class="btn btn-primary" disabled>📷 Capturer Manuellement</button>
+                    <button id="stopCamera" class="btn btn-secondary" disabled>⏹️ Arrêter</button>
+                </div>
+
+                <div id="status" class="status info" style="display: none;">
+                    Prêt à scanner
+                </div>
+            </div>
+
+            <div class="info-section">
+                <h2>📄 Informations Extraites</h2>
+                
+                <div class="form-group">
+                    <label for="nom">Nom:</label>
+                    <input type="text" id="nom" placeholder="Nom de famille">
+                </div>
+
+                <div class="form-group">
+                    <label for="prenom">Prénom:</label>
+                    <input type="text" id="prenom" placeholder="Prénom">
+                </div>
+
+                <div class="form-group">
+                    <label for="cin">Numéro CIN:</label>
+                    <input type="text" id="cin" placeholder="Ex: A123456">
+                </div>
+
+                <div class="form-group">
+                    <label for="dateNaissance">Date de Naissance:</label>
+                    <input type="text" id="dateNaissance" placeholder="JJ/MM/AAAA">
+                </div>
+
+                <div class="form-group">
+                    <label for="lieuNaissance">Lieu de Naissance:</label>
+                    <input type="text" id="lieuNaissance" placeholder="Ville de naissance">
+                </div>
+
+                <div class="form-group">
+                    <label for="adresse">Adresse:</label>
+                    <input type="text" id="adresse" placeholder="Adresse complète">
+                </div>
+
+                <div class="form-group">
+                    <label for="dateExpiration">Date d'Expiration:</label>
+                    <input type="text" id="dateExpiration" placeholder="JJ/MM/AAAA">
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let video = document.getElementById('video');
+        let canvas = document.getElementById('canvas');
+        let ctx = canvas.getContext('2d');
+        let stream = null;
+
+        const startCameraBtn = document.getElementById('startCamera');
+        const captureBtn = document.getElementById('captureBtn');
+        const stopCameraBtn = document.getElementById('stopCamera');
+        const status = document.getElementById('status');
+
+        // Éléments de formulaire
+        const fields = {
+            nom: document.getElementById('nom'),
+            prenom: document.getElementById('prenom'),
+            cin: document.getElementById('cin'),
+            dateNaissance: document.getElementById('dateNaissance'),
+            lieuNaissance: document.getElementById('lieuNaissance'),
+            adresse: document.getElementById('adresse'),
+            dateExpiration: document.getElementById('dateExpiration')
+        };
+
+        function showStatus(message, type = 'info') {
+            status.style.display = 'block';
+            status.className = `status ${type}`;
+            status.innerHTML = message;
+        }
+
+        let detectionInterval = null;
+        let isProcessing = false;
+        let lastDetectionTime = 0;
+
+        async function startCamera() {
+            try {
+                // Priorité à la caméra arrière sur mobile
+                const constraints = {
+                    video: {
+                        width: { ideal: 1280 },
+                        height: { ideal: 720 },
+                        facingMode: { ideal: 'environment' }, // Force caméra arrière
+                        focusMode: { ideal: 'continuous' }
+                    }
+                };
+
+                stream = await navigator.mediaDevices.getUserMedia(constraints);
+                video.srcObject = stream;
+                
+                // Attendre que la vidéo soit prête
+                await new Promise(resolve => {
+                    video.onloadedmetadata = resolve;
+                });
+
+                startCameraBtn.disabled = true;
+                captureBtn.disabled = false;
+                stopCameraBtn.disabled = false;
+                
+                showStatus('📹 Caméra arrière activée - Détection automatique en cours...', 'success');
+                
+                // Démarrer la détection automatique
+                startAutoDetection();
+                
+            } catch (error) {
+                console.error('Erreur lors du démarrage de la caméra:', error);
+                showStatus('❌ Impossible d\'accéder à la caméra arrière. Vérifiez les permissions.', 'error');
+            }
+        }
+
+        function stopCamera() {
+            // Arrêter la détection automatique
+            if (detectionInterval) {
+                clearInterval(detectionInterval);
+                detectionInterval = null;
+            }
+            
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+                stream = null;
+            }
+            
+            startCameraBtn.disabled = false;
+            captureBtn.disabled = true;
+            stopCameraBtn.disabled = true;
+            isProcessing = false;
+            
+            showStatus('📷 Caméra arrêtée', 'info');
+        }
+
+        function startAutoDetection() {
+            // Vérifier la présence d'une carte toutes les 2 secondes
+            detectionInterval = setInterval(() => {
+                if (!isProcessing && stream) {
+                    detectCard();
+                }
+            }, 2000);
+        }
+
+        async function detectCard() {
+            const now = Date.now();
+            // Éviter les détections trop rapprochées
+            if (now - lastDetectionTime < 3000) return;
+            
+            try {
+                // Capturer une petite image pour la détection rapide
+                const smallCanvas = document.createElement('canvas');
+                const smallCtx = smallCanvas.getContext('2d');
+                
+                // Réduire la résolution pour une détection plus rapide
+                smallCanvas.width = 320;
+                smallCanvas.height = 240;
+                
+                smallCtx.drawImage(video, 0, 0, 320, 240);
+                const imageData = smallCanvas.toDataURL('image/png');
+                
+                // Détection simple basée sur les contours et le contenu
+                const hasCardLikeContent = await quickCardDetection(imageData);
+                
+                if (hasCardLikeContent) {
+                    lastDetectionTime = now;
+                    showStatus('🎯 Carte détectée! Analyse en cours...', 'info');
+                    captureImage();
+                }
+            } catch (error) {
+                console.error('Erreur lors de la détection:', error);
+            }
+        }
+
+        async function quickCardDetection(imageData) {
+            try {
+                isProcessing = true;
+                
+                // OCR rapide avec configuration optimisée pour la détection
+                const result = await Tesseract.recognize(
+                    imageData,
+                    'fra',
+                    {
+                        logger: () => {}, // Pas de logs pour la détection
+                        tessedit_pageseg_mode: Tesseract.PSM.AUTO,
+                        tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789',
+                    }
+                );
+
+                const text = result.data.text.replace(/\s/g, '');
+                
+                // Vérifier la présence d'éléments typiques d'une CIN marocaine
+                const hasIdNumber = /[A-Z]{1,2}\d{6,8}/.test(text);
+                const hasNumbers = /\d{6,}/.test(text);
+                const hasLetters = /[A-Z]{3,}/.test(text);
+                const hasMinLength = text.length > 10;
+                
+                isProcessing = false;
+                
+                // Critères de détection d'une carte
+                return hasIdNumber || (hasNumbers && hasLetters && hasMinLength);
+                
+            } catch (error) {
+                isProcessing = false;
+                return false;
+            }
+        }
+
+        function captureImage() {
+            // Empêcher les captures multiples simultanées
+            if (isProcessing) return;
+            
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            ctx.drawImage(video, 0, 0);
+            
+            // Convertir en image pour l'OCR
+            const imageData = canvas.toDataURL('image/png');
+            
+            showStatus('<span class="loading"></span>🔍 Analyse détaillée de la carte...', 'info');
+            processImage(imageData);
+        }
+
+        async function processImage(imageData) {
+            if (isProcessing) return;
+            isProcessing = true;
+            
+            try {
+                // Configuration Tesseract pour le français et l'arabe
+                const result = await Tesseract.recognize(
+                    imageData,
+                    'fra+ara', // Langues française et arabe
+                    {
+                        logger: m => {
+                            if (m.status === 'recognizing text') {
+                                const progress = Math.round(m.progress * 100);
+                                showStatus(`<span class="loading"></span>🔍 Reconnaissance en cours... ${progress}%`, 'info');
+                            }
+                        }
+                    }
+                );
+
+                const text = result.data.text;
+                console.log('Texte extrait:', text);
+                
+                // Parser le texte extrait
+                parseCardInfo(text);
+                
+            } catch (error) {
+                console.error('Erreur OCR:', error);
+                showStatus('❌ Erreur lors de l\'analyse. La détection automatique continue...', 'error');
+            } finally {
+                isProcessing = false;
+            }
+        }
+
+        function parseCardInfo(text) {
+            // Nettoyer le texte
+            const cleanText = text.replace(/\n/g, ' ').replace(/\s+/g, ' ').trim();
+            console.log('Texte nettoyé:', cleanText);
+
+            // Patterns pour extraire les informations (adaptés aux cartes marocaines)
+            const patterns = {
+                // Numéro CIN (lettres suivies de chiffres)
+                cin: /\b[A-Z]{1,2}\d{6,8}\b/i,
+                
+                // Dates (format JJ/MM/AAAA ou JJ-MM-AAAA)
+                date: /\b\d{1,2}[\/\-]\d{1,2}[\/\-]\d{4}\b/g,
+                
+                // Noms (recherche de patterns communs après des mots clés)
+                nom: /(?:nom|family|اللقب|الاسم العائلي)[:\s]+([a-zA-Zàâäéèêëïîôöùûüÿç\s]{2,30})/i,
+                prenom: /(?:prénom|prenom|given|الاسم الشخصي)[:\s]+([a-zA-Zàâäéèêëïîôöùûüÿç\s]{2,30})/i,
+                
+                // Lieux (villes marocaines communes)
+                lieu: /\b(Casablanca|Rabat|Fès|Marrakech|Agadir|Tanger|Meknès|Oujda|Kenitra|Tétouan|Safi|Mohammedia|Khouribga|Beni Mellal|El Jadida|Nador|Settat|Larache|Khemisset|Guelmim)\b/i,
+            };
+
+            let extractedInfo = {};
+
+            // Extraire CIN
+            const cinMatch = cleanText.match(patterns.cin);
+            if (cinMatch) {
+                extractedInfo.cin = cinMatch[0];
+            }
+
+            // Extraire dates
+            const dateMatches = cleanText.match(patterns.date);
+            if (dateMatches && dateMatches.length >= 1) {
+                extractedInfo.dateNaissance = dateMatches[0];
+                if (dateMatches.length >= 2) {
+                    extractedInfo.dateExpiration = dateMatches[1];
+                }
+            }
+
+            // Extraire nom et prénom
+            const nomMatch = cleanText.match(patterns.nom);
+            if (nomMatch) {
+                extractedInfo.nom = nomMatch[1].trim();
+            }
+
+            const prenomMatch = cleanText.match(patterns.prenom);
+            if (prenomMatch) {
+                extractedInfo.prenom = prenomMatch[1].trim();
+            }
+
+            // Extraire lieu
+            const lieuMatch = cleanText.match(patterns.lieu);
+            if (lieuMatch) {
+                extractedInfo.lieuNaissance = lieuMatch[0];
+            }
+
+            // Essayer d'extraire l'adresse (texte entre certains mots clés)
+            const adressePattern = /(?:adresse|address|العنوان)[:\s]+(.*?)(?=\d{1,2}[\/\-]\d{1,2}[\/\-]\d{4}|$)/i;
+            const adresseMatch = cleanText.match(adressePattern);
+            if (adresseMatch) {
+                extractedInfo.adresse = adresseMatch[1].trim().substring(0, 100); // Limiter la longueur
+            }
+
+            // Remplir les champs
+            fillFields(extractedInfo);
+
+            // Afficher le résultat
+            const foundFields = Object.keys(extractedInfo).length;
+            if (foundFields > 0) {
+                showStatus(`✅ Carte analysée avec succès! ${foundFields} champ(s) extrait(s). La détection continue...`, 'success');
+                
+                // Pause dans la détection après une reconnaissance réussie
+                setTimeout(() => {
+                    if (detectionInterval) {
+                        showStatus('🔄 Détection automatique active - Présentez une nouvelle carte si nécessaire', 'info');
+                    }
+                }, 5000);
+            } else {
+                showStatus('🔍 Détection automatique en cours - Positionnez bien la carte dans le cadre', 'info');
+            }
+        }
+
+        function fillFields(info) {
+            Object.keys(info).forEach(key => {
+                if (fields[key] && info[key]) {
+                    fields[key].value = info[key];
+                    // Animation de mise à jour
+                    fields[key].style.background = '#e8f5e8';
+                    setTimeout(() => {
+                        fields[key].style.background = '';
+                    }, 2000);
+                }
+            });
+        }
+
+        // Event listeners
+        startCameraBtn.addEventListener('click', startCamera);
+        captureBtn.addEventListener('click', captureImage);
+        stopCameraBtn.addEventListener('click', stopCamera);
+
+        // Initialisation
+        showStatus('👆 Cliquez sur "Démarrer Caméra" pour activer la détection automatique', 'info');
+    </script>
+</body>
+</html>
